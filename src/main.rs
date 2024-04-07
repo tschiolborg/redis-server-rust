@@ -1,7 +1,8 @@
 use anyhow::Result;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+pub mod resp;
 
 async fn handle_connection(mut stream: tokio::net::TcpStream) -> Result<()> {
     println!("accepted new connection");
@@ -13,8 +14,18 @@ async fn handle_connection(mut stream: tokio::net::TcpStream) -> Result<()> {
         if n == 0 {
             break;
         }
+        let res = resp::parse_and_handle(&buf[..n]);
+        let res = resp::write_value(res);
 
-        stream.write_all(b"+PONG\r\n").await?;
+        println!(
+            "res: {:?}",
+            res.to_vec()
+                .into_iter()
+                .map(|b| b as char)
+                .collect::<String>()
+        );
+
+        stream.write_all(&res).await?;
     }
 
     Ok(())
