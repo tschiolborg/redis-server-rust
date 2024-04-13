@@ -1,185 +1,149 @@
 use anyhow::{bail, Result};
 
+pub enum RespIn {
+    Array(Vec<String>),
+}
+
 #[derive(Debug, Clone)]
-pub enum RespValue {
+pub enum RespOut {
     SimpleString(String),
     Error(String),
     Integer(i64),
-    BulkString(Option<Vec<u8>>),
-    Array(Vec<RespValue>),
+    BulkString(Option<String>),
+    Array(Vec<RespOut>),
 }
 
-pub fn parse_and_handle(buf: &[u8]) -> RespValue {
-    let res = match parse_value(buf) {
-        Ok(req) => handle_value(req),
-        Err(e) => Err(e),
-    };
-    match res {
-        Ok(res) => res,
-        Err(e) => {
-            eprintln!("Failed to handle request: {}", e);
-            eprintln!(
-                "input: {:?}",
-                buf.to_vec()
-                    .into_iter()
-                    .map(|b| b as char)
-                    .collect::<String>()
-            );
-            RespValue::Error(e.to_string())
-        }
+pub struct RespParser<'a> {
+    buf: &'a [u8],
+    pos: usize,
+}
+
+impl RespParser<'_> {
+    pub fn new(buf: &[u8]) -> RespParser {
+        RespParser { buf, pos: 0 }
     }
-}
 
-pub fn parse_value(buf: &[u8]) -> Result<RespValue> {
-    let mut iter = buf.iter().copied();
-    parse_value_inner(&mut iter)
-}
+    pub fn parse_full(&mut self) -> Result<Vec<String>> {
+        self.next_array()
+    }
 
-fn parse_value_inner(iter: &mut impl Iterator<Item = u8>) -> Result<RespValue> {
-    let res = match iter.next() {
-        Some(b'+') => RespValue::SimpleString(parse_simple_string(iter)?),
-        Some(b':') => RespValue::Integer(parse_integer(iter)?),
-        Some(b'$') => RespValue::BulkString(parse_bulk_string(iter)?),
-        Some(b'*') => RespValue::Array(parse_array(iter)?),
-        Some(s) => bail!("unexpected byte {:?}", s as char),
-        None => bail!("unexpected EOF"),
-    };
-    Ok(res)
-}
+    fn next(&mut self) -> Result<u8> {
+        if self.buf.len() <= self.pos {
+            bail!("unexpected EOF");
+        }
+        let res = self.buf[self.pos];
+        self.pos += 1;
+        Ok(res)
+    }
 
-fn parse_simple_string(iter: &mut impl Iterator<Item = u8>) -> Result<String> {
-    let mut buf = Vec::new();
+    fn next_line(&mut self) -> Result<String> {
+        let mut buf = Vec::new();
 
-    loop {
-        match iter.next() {
-            Some(b'\r') => {
-                if iter.next() != Some(b'\n') {
-                    bail!("expected LF");
+        loop {
+            match self.next()? {
+                b'\r' => {
+                    if self.next()? != b'\n' {
+                        bail!("expected LF");
+                    }
+                    return Ok(String::from_utf8(buf)?);
                 }
-                return Ok(String::from_utf8(buf)?);
+                byte => buf.push(byte),
             }
-            Some(byte) => buf.push(byte),
-            None => bail!("unexpected EOF"),
+        }
+    }
+
+    fn next_int(&mut self) -> Result<i64> {
+        self.next_line()?.parse::<i64>().map_err(Into::into)
+    }
+
+    fn next_string(&mut self) -> Result<String> {
+        self.consume_type(b'$')?;
+        let n = self.next_int()?;
+        if n < 1 {
+            bail!("fuck null strings")
+        }
+        self.next_line().map_err(Into::into)
+    }
+
+    fn next_array(&mut self) -> Result<Vec<String>> {
+        self.consume_type(b'*')?;
+        let n = self.next_int()?;
+        let mut res = Vec::new();
+        for _ in 0..n {
+            res.push(self.next_string()?);
+        }
+        Ok(res)
+    }
+
+    fn consume_type(&mut self, expected: u8) -> Result<()> {
+        match self.next()? {
+            s if s == expected => return Ok(()),
+            s => bail!("unexpected data type {:?}", s),
         }
     }
 }
 
-fn parse_integer(iter: &mut impl Iterator<Item = u8>) -> Result<i64> {
-    let mut buf = Vec::new();
-
-    loop {
-        match iter.next() {
-            Some(b'\r') => {
-                if iter.next() != Some(b'\n') {
-                    bail!("expected LF");
-                }
-                return Ok(String::from_utf8(buf)?.parse::<i64>()?);
-            }
-            Some(byte) => buf.push(byte),
-            None => bail!("unexpected EOF"),
-        }
-    }
-}
-
-fn parse_bulk_string(iter: &mut impl Iterator<Item = u8>) -> Result<Option<Vec<u8>>> {
-    let n = parse_integer(iter)?;
-    if n == -1 {
-        return Ok(None);
-    }
-
-    let mut buf = vec![0; n as usize];
-    for i in 0..n as usize {
-        match iter.next() {
-            Some(byte) => buf[i] = byte,
-            None => bail!("unexpected EOF"),
-        }
-    }
-
-    if iter.next() != Some(b'\r') {
-        bail!("expected CR");
-    }
-    if iter.next() != Some(b'\n') {
-        bail!("expected LF");
-    }
-
-    Ok(Some(buf))
-}
-
-fn parse_array(iter: &mut impl Iterator<Item = u8>) -> Result<Vec<RespValue>> {
-    let n = parse_integer(iter)?;
-    let mut res = Vec::new();
-    for _ in 0..n {
-        res.push(parse_value_inner(iter)?);
-    }
-    Ok(res)
-}
-
-pub fn handle_value(value: RespValue) -> Result<RespValue> {
+pub fn handle_value(value: RespIn) -> Result<RespOut> {
     match value {
-        RespValue::Array(mut values) => {
+        RespIn::Array(mut values) => {
             if values.is_empty() {
                 bail!("empty array");
             }
 
-            let command = match values.remove(0) {
-                RespValue::SimpleString(s) => s,
-                RespValue::BulkString(Some(data)) => String::from_utf8(data)?,
-                _ => bail!("expected command"),
-            };
+            let command = values.remove(0);
 
             let args = values;
 
             match command.to_uppercase().as_str() {
-                "PING" => Ok(RespValue::SimpleString("PONG".into())),
+                "PING" => Ok(RespOut::SimpleString("PONG".into())),
                 "ECHO" => {
                     if args.len() != 1 {
                         bail!("expected 1 argument");
                     }
-                    Ok(args[0].clone())
+                    Ok(RespOut::BulkString(Some(args[0].clone())))
                 }
                 _ => bail!("unknown command"),
             }
         }
-        _ => bail!("expected array"),
     }
 }
 
-pub fn write_value(value: RespValue) -> Vec<u8> {
+pub fn write_value(value: RespOut) -> Vec<u8> {
     let mut buf = Vec::new();
     write_value_inner(&mut buf, &value);
     buf
 }
 
-fn write_value_inner(buf: &mut Vec<u8>, value: &RespValue) {
+fn write_value_inner(buf: &mut Vec<u8>, value: &RespOut) {
     match value {
-        RespValue::SimpleString(s) => {
+        RespOut::SimpleString(s) => {
             buf.push(b'+');
             buf.extend(s.as_bytes());
             buf.extend(b"\r\n");
         }
-        RespValue::Error(e) => {
+        RespOut::Error(e) => {
             buf.push(b'-');
             buf.extend(b"ERR ");
             buf.extend(e.as_bytes());
             buf.extend(b"\r\n");
         }
-        RespValue::Integer(i) => {
+        RespOut::Integer(i) => {
             buf.push(b':');
             buf.extend(i.to_string().as_bytes());
             buf.extend(b"\r\n");
         }
-        RespValue::BulkString(Some(data)) => {
+        RespOut::BulkString(Some(data)) => {
             buf.push(b'$');
             buf.extend(data.len().to_string().as_bytes());
             buf.extend(b"\r\n");
-            buf.extend(data);
+            buf.extend(data.as_bytes());
             buf.extend(b"\r\n");
         }
-        RespValue::BulkString(None) => {
+        RespOut::BulkString(None) => {
             buf.push(b'$');
             buf.extend(b"-1\r\n");
         }
-        RespValue::Array(values) => {
+        RespOut::Array(values) => {
             buf.push(b'*');
             buf.extend(values.len().to_string().as_bytes());
             buf.extend(b"\r\n");

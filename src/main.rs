@@ -14,7 +14,18 @@ async fn handle_connection(mut stream: tokio::net::TcpStream) -> Result<()> {
         if n == 0 {
             break;
         }
-        let res = resp::parse_and_handle(&buf[..n]);
+        println!(
+            "req: {:?}",
+            buf[..n].iter().map(|b| *b as char).collect::<String>()
+        );
+        let mut parser = resp::RespParser::new(&buf[..n]);
+        let res = match parser.parse_full() {
+            Ok(req) => match resp::handle_value(resp::RespIn::Array(req)) {
+                Ok(res) => res,
+                Err(e) => resp::RespOut::Error(format!("failed to handle request: {}", e)),
+            },
+            Err(e) => resp::RespOut::Error(format!("failed to parse request: {}", e)),
+        };
         let res = resp::write_value(res);
 
         println!(
