@@ -13,6 +13,11 @@ pub enum RespOut {
 }
 
 pub fn parse(buf: &[u8]) -> Result<RespIn> {
+    println!(
+        "req: {:?}",
+        buf.iter().map(|b| *b as char).collect::<String>()
+    );
+
     let mut parser = RespParser::new(buf);
     let values = parser.parse_full()?;
     Ok(RespIn::Array(values))
@@ -88,44 +93,58 @@ impl RespParser<'_> {
     }
 }
 
-pub fn write_value(value: RespOut) -> Vec<u8> {
-    let mut buf = Vec::new();
-    write_value_inner(&mut buf, &value);
-    buf
+impl RespOut {
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        serialize(&mut buf, &self);
+
+        println!(
+            "res: {:?}",
+            buf.to_vec()
+                .into_iter()
+                .map(|b| b as char)
+                .collect::<String>()
+        );
+        buf
+    }
 }
 
-fn write_value_inner(buf: &mut Vec<u8>, value: &RespOut) {
+fn serialize(buf: &mut Vec<u8>, value: &RespOut) {
     match value {
         RespOut::SimpleString(s) => {
             buf.push(b'+');
             buf.extend(s.as_bytes());
-            buf.extend(b"\r\n");
+            push_crlf(buf);
         }
         RespOut::Error(e) => {
             buf.push(b'-');
             buf.extend(b"ERR ");
             buf.extend(e.as_bytes());
-            buf.extend(b"\r\n");
+            push_crlf(buf);
         }
         RespOut::Integer(i) => {
             buf.push(b':');
             buf.extend(i.to_string().as_bytes());
-            buf.extend(b"\r\n");
+            push_crlf(buf);
         }
         RespOut::BulkString(s) => {
             buf.push(b'$');
             buf.extend(s.len().to_string().as_bytes());
-            buf.extend(b"\r\n");
+            push_crlf(buf);
             buf.extend(s.as_bytes());
-            buf.extend(b"\r\n");
+            push_crlf(buf);
         }
         RespOut::Array(values) => {
             buf.push(b'*');
             buf.extend(values.len().to_string().as_bytes());
-            buf.extend(b"\r\n");
+            push_crlf(buf);
             for value in values {
-                write_value_inner(buf, value);
+                serialize(buf, value);
             }
         }
     }
+}
+
+fn push_crlf(buf: &mut Vec<u8>) {
+    buf.extend(b"\r\n");
 }
