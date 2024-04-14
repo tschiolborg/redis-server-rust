@@ -10,6 +10,7 @@ pub enum RespOut {
     Integer(i64),
     BulkString(String),
     Array(Vec<RespOut>),
+    Null,
 }
 
 pub fn parse(buf: &[u8]) -> Result<RespIn> {
@@ -132,6 +133,11 @@ fn serialize(buf: &mut Vec<u8>, value: &RespOut) {
             buf.extend(s.len().to_string().as_bytes());
             push_crlf(buf);
             buf.extend(s.as_bytes());
+            push_crlf(buf);
+        }
+        RespOut::Null => {
+            buf.push(b'$');
+            buf.extend(b"-1");
             push_crlf(buf);
         }
         RespOut::Array(values) => {

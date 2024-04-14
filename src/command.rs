@@ -18,6 +18,7 @@ fn handle_value(value: RespIn) -> Result<RespOut> {
             match cmd.to_uppercase().as_str() {
                 "PING" => Ping::handle(&arr),
                 "ECHO" => Echo::handle(&arr),
+                "GET" => Get::handle(&arr),
                 _ => bail!("unknown command: {}", cmd),
             }
         }
@@ -28,8 +29,10 @@ pub trait Command {
     fn handle(args: &Vec<String>) -> Result<RespOut>;
 }
 
-pub struct Ping {}
-pub struct Echo {}
+struct Ping {}
+struct Echo {}
+
+struct Get {}
 
 impl Command for Ping {
     fn handle(_args: &Vec<String>) -> Result<RespOut> {
@@ -43,5 +46,11 @@ impl Command for Echo {
             bail!("ECHO requires at least one argument")
         }
         Ok(RespOut::BulkString(args[0].clone()))
+    }
+}
+
+impl Command for Get {
+    fn handle(_args: &Vec<String>) -> Result<RespOut> {
+        Ok(RespOut::Null)
     }
 }
