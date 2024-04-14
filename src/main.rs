@@ -2,6 +2,7 @@ use anyhow::Result;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
+pub mod command;
 pub mod resp;
 
 async fn handle_connection(mut stream: tokio::net::TcpStream) -> Result<()> {
@@ -18,14 +19,12 @@ async fn handle_connection(mut stream: tokio::net::TcpStream) -> Result<()> {
             "req: {:?}",
             buf[..n].iter().map(|b| *b as char).collect::<String>()
         );
-        let mut parser = resp::RespParser::new(&buf[..n]);
-        let res = match parser.parse_full() {
-            Ok(req) => match resp::handle_value(resp::RespIn::Array(req)) {
-                Ok(res) => res,
-                Err(e) => resp::RespOut::Error(format!("failed to handle request: {}", e)),
-            },
-            Err(e) => resp::RespOut::Error(format!("failed to parse request: {}", e)),
+
+        let res = match resp::parse(&buf[..n]) {
+            Ok(req) => command::handle(req),
+            Err(e) => resp::RespOut::Error(format!("failed to parse: {}", e)),
         };
+
         let res = resp::write_value(res);
 
         println!(

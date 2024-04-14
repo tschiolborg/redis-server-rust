@@ -4,13 +4,18 @@ pub enum RespIn {
     Array(Vec<String>),
 }
 
-#[derive(Debug, Clone)]
 pub enum RespOut {
     SimpleString(String),
     Error(String),
     Integer(i64),
-    BulkString(Option<String>),
+    BulkString(String),
     Array(Vec<RespOut>),
+}
+
+pub fn parse(buf: &[u8]) -> Result<RespIn> {
+    let mut parser = RespParser::new(buf);
+    let values = parser.parse_full()?;
+    Ok(RespIn::Array(values))
 }
 
 pub struct RespParser<'a> {
@@ -83,31 +88,6 @@ impl RespParser<'_> {
     }
 }
 
-pub fn handle_value(value: RespIn) -> Result<RespOut> {
-    match value {
-        RespIn::Array(mut values) => {
-            if values.is_empty() {
-                bail!("empty array");
-            }
-
-            let command = values.remove(0);
-
-            let args = values;
-
-            match command.to_uppercase().as_str() {
-                "PING" => Ok(RespOut::SimpleString("PONG".into())),
-                "ECHO" => {
-                    if args.len() != 1 {
-                        bail!("expected 1 argument");
-                    }
-                    Ok(RespOut::BulkString(Some(args[0].clone())))
-                }
-                _ => bail!("unknown command"),
-            }
-        }
-    }
-}
-
 pub fn write_value(value: RespOut) -> Vec<u8> {
     let mut buf = Vec::new();
     write_value_inner(&mut buf, &value);
@@ -132,16 +112,12 @@ fn write_value_inner(buf: &mut Vec<u8>, value: &RespOut) {
             buf.extend(i.to_string().as_bytes());
             buf.extend(b"\r\n");
         }
-        RespOut::BulkString(Some(data)) => {
+        RespOut::BulkString(s) => {
             buf.push(b'$');
-            buf.extend(data.len().to_string().as_bytes());
+            buf.extend(s.len().to_string().as_bytes());
             buf.extend(b"\r\n");
-            buf.extend(data.as_bytes());
+            buf.extend(s.as_bytes());
             buf.extend(b"\r\n");
-        }
-        RespOut::BulkString(None) => {
-            buf.push(b'$');
-            buf.extend(b"-1\r\n");
         }
         RespOut::Array(values) => {
             buf.push(b'*');
