@@ -15,42 +15,28 @@ fn handle_value(value: RespIn) -> Result<RespOut> {
                 bail!("empty array");
             }
             let cmd = arr.remove(0);
+            let args = &arr;
             match cmd.to_uppercase().as_str() {
-                "PING" => Ping::handle(&arr),
-                "ECHO" => Echo::handle(&arr),
-                "GET" => Get::handle(&arr),
+                "PING" => ping(args),
+                "ECHO" => echo(args),
+                "GET" => get(args),
                 _ => bail!("unknown command: {}", cmd),
             }
         }
     }
 }
 
-pub trait Command {
-    fn handle(args: &Vec<String>) -> Result<RespOut>;
+fn ping(_args: &Vec<String>) -> Result<RespOut> {
+    Ok(RespOut::SimpleString("PONG".to_string()))
 }
 
-struct Ping {}
-struct Echo {}
-
-struct Get {}
-
-impl Command for Ping {
-    fn handle(_args: &Vec<String>) -> Result<RespOut> {
-        Ok(RespOut::SimpleString("PONG".to_string()))
+fn echo(args: &Vec<String>) -> Result<RespOut> {
+    if args.is_empty() {
+        bail!("ECHO requires at least one argument")
     }
+    Ok(RespOut::BulkString(args[0].clone()))
 }
 
-impl Command for Echo {
-    fn handle(args: &Vec<String>) -> Result<RespOut> {
-        if args.is_empty() {
-            bail!("ECHO requires at least one argument")
-        }
-        Ok(RespOut::BulkString(args[0].clone()))
-    }
-}
-
-impl Command for Get {
-    fn handle(_args: &Vec<String>) -> Result<RespOut> {
-        Ok(RespOut::Null)
-    }
+fn get(_args: &Vec<String>) -> Result<RespOut> {
+    Ok(RespOut::Null)
 }

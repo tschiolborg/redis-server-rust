@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
 
+/// Input is always a list of BulkStrings
 pub enum RespIn {
     Array(Vec<String>),
 }
@@ -13,15 +14,21 @@ pub enum RespOut {
     Null,
 }
 
+const SIMPLE_STRING_BYTE_CODE: u8 = b'+';
+const ERROR_BYTE_CODE: u8 = b'-';
+const INTEGER_BYTE_CODE: u8 = b':';
+const BULK_STRING_BYTE_CODE: u8 = b'$';
+const ARRAY_BYTE_CODE: u8 = b'*';
+const NULL_BYTE_CODE: u8 = b'_';
+
 pub fn parse(buf: &[u8]) -> Result<RespIn> {
     println!(
-        "req: {:?}",
+        "  (DEBUG) req: {:?}",
         buf.iter().map(|b| *b as char).collect::<String>()
     );
 
     let mut parser = RespParser::new(buf);
-    let values = parser.parse_full()?;
-    Ok(RespIn::Array(values))
+    parser.parse_full()
 }
 
 pub struct RespParser<'a> {
@@ -34,8 +41,9 @@ impl RespParser<'_> {
         RespParser { buf, pos: 0 }
     }
 
-    pub fn parse_full(&mut self) -> Result<Vec<String>> {
-        self.next_array()
+    pub fn parse_full(&mut self) -> Result<RespIn> {
+        let values = self.next_array()?;
+        Ok(RespIn::Array(values))
     }
 
     fn next(&mut self) -> Result<u8> {
@@ -68,16 +76,16 @@ impl RespParser<'_> {
     }
 
     fn next_string(&mut self) -> Result<String> {
-        self.consume_type(b'$')?;
+        self.consume_type(BULK_STRING_BYTE_CODE)?;
         let n = self.next_int()?;
-        if n < 1 {
+        if n < 0 {
             bail!("fuck null strings")
         }
-        self.next_line().map_err(Into::into)
+        self.next_line()
     }
 
     fn next_array(&mut self) -> Result<Vec<String>> {
-        self.consume_type(b'*')?;
+        self.consume_type(ARRAY_BYTE_CODE)?;
         let n = self.next_int()?;
         let mut res = Vec::new();
         for _ in 0..n {
@@ -100,7 +108,7 @@ impl RespOut {
         serialize(&mut buf, &self);
 
         println!(
-            "res: {:?}",
+            "  (DEBUG) res: {:?}",
             buf.to_vec()
                 .into_iter()
                 .map(|b| b as char)
@@ -113,35 +121,34 @@ impl RespOut {
 fn serialize(buf: &mut Vec<u8>, value: &RespOut) {
     match value {
         RespOut::SimpleString(s) => {
-            buf.push(b'+');
+            buf.push(SIMPLE_STRING_BYTE_CODE);
             buf.extend(s.as_bytes());
             push_crlf(buf);
         }
         RespOut::Error(e) => {
-            buf.push(b'-');
+            buf.push(ERROR_BYTE_CODE);
             buf.extend(b"ERR ");
             buf.extend(e.as_bytes());
             push_crlf(buf);
         }
         RespOut::Integer(i) => {
-            buf.push(b':');
+            buf.push(INTEGER_BYTE_CODE);
             buf.extend(i.to_string().as_bytes());
             push_crlf(buf);
         }
         RespOut::BulkString(s) => {
-            buf.push(b'$');
+            buf.push(BULK_STRING_BYTE_CODE);
             buf.extend(s.len().to_string().as_bytes());
             push_crlf(buf);
             buf.extend(s.as_bytes());
             push_crlf(buf);
         }
         RespOut::Null => {
-            buf.push(b'$');
-            buf.extend(b"-1");
+            buf.push(NULL_BYTE_CODE);
             push_crlf(buf);
         }
         RespOut::Array(values) => {
-            buf.push(b'*');
+            buf.push(ARRAY_BYTE_CODE);
             buf.extend(values.len().to_string().as_bytes());
             push_crlf(buf);
             for value in values {
