@@ -1,6 +1,21 @@
 use crate::data::SharedData;
 use crate::resp::{RespIn, RespOut};
 use anyhow::{bail, Result};
+use std::cell::Cell;
+
+struct Args<'b> {
+    items: &'b Vec<String>,
+    pos: Cell<usize>,
+}
+
+// I think there is something wrong with lifetimes
+unsafe impl Send for Args<'_> {}
+unsafe impl Sync for Args<'_> {}
+
+struct Handler<'a, 'b> {
+    data: &'a SharedData,
+    args: Args<'b>,
+}
 
 pub async fn handle(value: RespIn, data: &SharedData) -> RespOut {
     match handle_value(value, data).await {
@@ -11,33 +26,51 @@ pub async fn handle(value: RespIn, data: &SharedData) -> RespOut {
 
 async fn handle_value(value: RespIn, data: &SharedData) -> Result<RespOut> {
     match value {
-        RespIn::Array(mut arr) => {
-            if arr.is_empty() {
-                bail!("empty array");
-            }
-            let cmd = arr.remove(0); // not optimal with a lot of args
-
-            let commands = Commands::new(data, &arr);
-
-            match cmd.to_uppercase().as_str() {
-                "PING" => commands.ping(),
-                "ECHO" => commands.echo(),
-                "GET" => commands.get().await,
-                "SET" => commands.set().await,
-                _ => bail!("unknown command: {}", cmd),
-            }
+        RespIn::Array(arr) => {
+            let handler = Handler::new(data, Args::new(&arr));
+            handler.handle().await
         }
     }
 }
 
-struct Commands<'a> {
-    data: &'a SharedData,
-    args: &'a Vec<String>,
+impl<'b> Args<'b> {
+    fn new(items: &'b Vec<String>) -> Self {
+        Self {
+            items,
+            pos: Cell::new(0),
+        }
+    }
+
+    fn next(&self) -> Result<&String> {
+        let pos = self.pos.get();
+        if !self.has_next() {
+            bail!("Missing argument number {}", pos + 1);
+        }
+        let res = &self.items[pos];
+        self.pos.set(pos + 1);
+        Ok(res)
+    }
+
+    fn has_next(&self) -> bool {
+        self.items.len() > self.pos.get()
+    }
 }
 
-impl<'a> Commands<'a> {
-    pub fn new(data: &'a SharedData, args: &'a Vec<String>) -> Commands<'a> {
+impl<'a, 'b> Handler<'a, 'b> {
+    fn new(data: &'a SharedData, args: Args<'b>) -> Handler<'a, 'b> {
         Self { data, args }
+    }
+
+    async fn handle(&self) -> Result<RespOut> {
+        let cmd = self.args.next()?;
+
+        match cmd.to_uppercase().as_str() {
+            "PING" => self.ping(),
+            "ECHO" => self.echo(),
+            "GET" => self.get().await,
+            "SET" => self.set().await,
+            _ => bail!("unknown command: {}", cmd),
+        }
     }
 
     fn ping(&self) -> Result<RespOut> {
@@ -45,19 +78,13 @@ impl<'a> Commands<'a> {
     }
 
     fn echo(&self) -> Result<RespOut> {
-        if self.args.is_empty() {
-            bail!("ECHO requires at least one argument")
-        }
-        Ok(RespOut::BulkString(self.args[0].clone()))
+        Ok(RespOut::BulkString(self.args.next()?.clone()))
     }
 
     async fn get(&self) -> Result<RespOut> {
-        if self.args.is_empty() {
-            bail!("GET requires one argument")
-        }
-        let key = &self.args[0];
-
         let data = self.data.read().await;
+
+        let key = self.args.next()?.as_str();
 
         match data.get(key) {
             Some(value) => Ok(RespOut::BulkString(value)),
@@ -66,15 +93,22 @@ impl<'a> Commands<'a> {
     }
 
     async fn set(&self) -> Result<RespOut> {
-        if self.args.len() != 2 {
-            bail!("SET requires two arguments")
+        let key = self.args.next()?.clone();
+        let value = self.args.next()?.clone();
+
+        let mut px: Option<u128> = None;
+
+        while self.args.has_next() {
+            let arg = self.args.next()?;
+            match arg.to_uppercase().as_str() {
+                "PX" => px = Some(self.args.next()?.parse()?),
+                s => bail!("Unknown argument {}", s),
+            }
         }
-        let key = self.args[0].clone();
-        let value = self.args[1].clone();
 
         let mut data = self.data.write().await;
 
-        data.set(key, value);
+        data.set(key, value, px);
 
         Ok(RespOut::SimpleString("OK".to_string()))
     }

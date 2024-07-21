@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+use std::cell::Cell;
 
 /// Input is always a list of BulkStrings
 pub enum RespIn {
@@ -27,35 +28,39 @@ pub fn parse(buf: &[u8]) -> Result<RespIn> {
         buf.iter().map(|b| *b as char).collect::<String>()
     );
 
-    let mut parser = RespParser::new(buf);
+    let parser = RespParser::new(buf);
     parser.parse_full()
 }
 
 pub struct RespParser<'a> {
     buf: &'a [u8],
-    pos: usize,
+    pos: Cell<usize>,
 }
 
 impl RespParser<'_> {
     pub fn new(buf: &[u8]) -> RespParser {
-        RespParser { buf, pos: 0 }
+        RespParser {
+            buf,
+            pos: Cell::new(0),
+        }
     }
 
-    pub fn parse_full(&mut self) -> Result<RespIn> {
+    pub fn parse_full(&self) -> Result<RespIn> {
         let values = self.next_array()?;
         Ok(RespIn::Array(values))
     }
 
-    fn next(&mut self) -> Result<u8> {
-        if self.buf.len() <= self.pos {
+    fn next(&self) -> Result<u8> {
+        let pos = self.pos.get();
+        if self.buf.len() <= pos {
             bail!("unexpected EOF");
         }
-        let res = self.buf[self.pos];
-        self.pos += 1;
+        let res = self.buf[pos];
+        self.pos.set(pos + 1);
         Ok(res)
     }
 
-    fn next_line(&mut self) -> Result<String> {
+    fn next_line(&self) -> Result<String> {
         let mut buf = Vec::new();
 
         loop {
@@ -71,11 +76,11 @@ impl RespParser<'_> {
         }
     }
 
-    fn next_int(&mut self) -> Result<i64> {
+    fn next_int(&self) -> Result<i64> {
         self.next_line()?.parse::<i64>().map_err(Into::into)
     }
 
-    fn next_string(&mut self) -> Result<String> {
+    fn next_string(&self) -> Result<String> {
         self.consume_type(BULK_STRING_BYTE_CODE)?;
         let n = self.next_int()?;
         if n < 0 {
@@ -84,7 +89,7 @@ impl RespParser<'_> {
         self.next_line()
     }
 
-    fn next_array(&mut self) -> Result<Vec<String>> {
+    fn next_array(&self) -> Result<Vec<String>> {
         self.consume_type(ARRAY_BYTE_CODE)?;
         let n = self.next_int()?;
         let mut res = Vec::new();
@@ -94,7 +99,7 @@ impl RespParser<'_> {
         Ok(res)
     }
 
-    fn consume_type(&mut self, expected: u8) -> Result<()> {
+    fn consume_type(&self, expected: u8) -> Result<()> {
         match self.next()? {
             s if s == expected => return Ok(()),
             s => bail!("unexpected data type {:?}", s),
