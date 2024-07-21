@@ -12,9 +12,7 @@ async fn handle_connection(
     mut stream: tokio::net::TcpStream,
     data: data::SharedData,
 ) -> Result<()> {
-    println!("accepted new connection");
-
-    let handler = command::Handler::new(data);
+    println!("(INFO) Accepted new connection");
 
     let mut buf = [0; 512];
 
@@ -25,7 +23,7 @@ async fn handle_connection(
         }
 
         let res = match resp::parse(&buf[..n]) {
-            Ok(req) => handler.handle(req).await,
+            Ok(req) => command::handle(req, &data).await,
             Err(e) => resp::RespOut::Error(format!("failed to parse: {}", e)),
         };
 
