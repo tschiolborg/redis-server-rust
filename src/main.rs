@@ -4,6 +4,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 
+pub mod background;
 pub mod command;
 pub mod data;
 pub mod resp;
@@ -38,6 +39,12 @@ async fn main() -> Result<()> {
     let listener = TcpListener::bind("127.0.0.1:6379").await?;
 
     let data = Arc::new(RwLock::new(data::InMemoryData::new()));
+
+    // Start background tasks
+    {
+        let data = Arc::clone(&data);
+        tokio::spawn(background::delete_expired(data));
+    }
 
     loop {
         let (stream, _) = listener.accept().await?;
