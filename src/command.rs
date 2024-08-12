@@ -117,7 +117,7 @@ impl<'a, 'b, 'c> Handler<'a, 'b, 'c> {
     }
 
     async fn info(&self) -> Result<RespOut> {
-        let info = self.info.read().await;
+        let info = self.info;
 
         let mut res = Vec::new();
 

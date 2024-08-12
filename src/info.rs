@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 type Section = HashMap<String, String>;
 type Info = HashMap<String, Section>;
 
-pub type SharedInfo = Arc<RwLock<Info>>;
+// TODO: make struct
+pub type SharedInfo = Arc<Info>;
 
 pub enum ReplicaRole {
     MASTER,

@@ -73,7 +73,8 @@ async fn main() -> Result<()> {
         }
     };
 
-    let info = Arc::new(RwLock::new(info::create_info(role)));
+    // read-only
+    let info = Arc::new(info::create_info(role));
 
     // Start background tasks
     {
