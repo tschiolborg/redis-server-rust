@@ -1,10 +1,12 @@
 use anyhow::Result;
+use clap::Parser;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 
 pub mod background;
+// pub mod cli;
 pub mod command;
 pub mod data;
 pub mod resp;
@@ -34,9 +36,24 @@ async fn handle_connection(
     Ok(())
 }
 
+/// Start a Redis server
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+pub struct Args {
+    /// Port to listen on
+    #[arg(short, long, default_value_t = 6379)]
+    port: u16,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    let listener = TcpListener::bind("127.0.0.1:6379").await?;
+    let args = Args::parse();
+
+    let addr = format!("127.0.0.1:{}", args.port);
+
+    println!("(INFO) Listening on {addr}");
+
+    let listener = TcpListener::bind(addr).await?;
 
     let data = Arc::new(RwLock::new(data::InMemoryData::new()));
 

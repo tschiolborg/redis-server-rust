@@ -7,4 +7,5 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.81"
+clap = { version = "4.5.15", features = ["derive"] }
 tokio = { version = "1.37.0", features = ["full"] }
