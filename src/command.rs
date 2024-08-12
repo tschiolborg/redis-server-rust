@@ -1,4 +1,5 @@
 use crate::data::SharedData;
+use crate::info::SharedInfo;
 use crate::resp::{RespIn, RespOut};
 use anyhow::{bail, Result};
 use std::cell::Cell;
@@ -12,22 +13,23 @@ struct Args<'b> {
 unsafe impl Send for Args<'_> {}
 unsafe impl Sync for Args<'_> {}
 
-struct Handler<'a, 'b> {
+struct Handler<'a, 'b, 'c> {
     data: &'a SharedData,
-    args: Args<'b>,
+    info: &'b SharedInfo,
+    args: Args<'c>,
 }
 
-pub async fn handle(value: RespIn, data: &SharedData) -> RespOut {
-    match handle_value(value, data).await {
+pub async fn handle(value: RespIn, data: &SharedData, info: &SharedInfo) -> RespOut {
+    match handle_value(value, data, info).await {
         Ok(res) => res,
         Err(e) => RespOut::Error(format!("failed to handle: {}", e)),
     }
 }
 
-async fn handle_value(value: RespIn, data: &SharedData) -> Result<RespOut> {
+async fn handle_value(value: RespIn, data: &SharedData, info: &SharedInfo) -> Result<RespOut> {
     match value {
         RespIn::Array(arr) => {
-            let handler = Handler::new(data, Args::new(&arr));
+            let handler = Handler::new(data, info, Args::new(&arr));
             handler.handle().await
         }
     }
@@ -56,9 +58,9 @@ impl<'b> Args<'b> {
     }
 }
 
-impl<'a, 'b> Handler<'a, 'b> {
-    fn new(data: &'a SharedData, args: Args<'b>) -> Handler<'a, 'b> {
-        Self { data, args }
+impl<'a, 'b, 'c> Handler<'a, 'b, 'c> {
+    fn new(data: &'a SharedData, info: &'b SharedInfo, args: Args<'c>) -> Handler<'a, 'b, 'c> {
+        Self { data, info, args }
     }
 
     async fn handle(&self) -> Result<RespOut> {
@@ -69,6 +71,7 @@ impl<'a, 'b> Handler<'a, 'b> {
             "ECHO" => self.echo(),
             "GET" => self.get().await,
             "SET" => self.set().await,
+            "INFO" => self.info().await,
             _ => bail!("unknown command: {}", cmd),
         }
     }
@@ -111,5 +114,31 @@ impl<'a, 'b> Handler<'a, 'b> {
         data.set(key, value, px);
 
         Ok(RespOut::SimpleString("OK".to_string()))
+    }
+
+    async fn info(&self) -> Result<RespOut> {
+        let info = self.info.read().await;
+
+        let mut res = Vec::new();
+
+        let mut sections = std::collections::HashSet::new();
+
+        while self.args.has_next() {
+            let arg = self.args.next()?;
+            sections.insert(arg.as_str());
+        }
+
+        for (k, v) in info.iter() {
+            if !sections.is_empty() && !sections.contains(&k.as_str()) {
+                continue;
+            }
+            res.push(format!("# {}\n", k));
+            for (k, v) in v.iter() {
+                res.push(format!("{}:{}\n", k, v));
+            }
+            res.push("\n".to_string());
+        }
+
+        return Ok(RespOut::BulkString(res.join("")));
     }
 }

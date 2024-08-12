@@ -8,11 +8,13 @@ use tokio::sync::RwLock;
 pub mod background;
 pub mod command;
 pub mod data;
+pub mod info;
 pub mod resp;
 
 async fn handle_connection(
     mut stream: tokio::net::TcpStream,
     data: data::SharedData,
+    info: info::SharedInfo,
 ) -> Result<()> {
     println!("(INFO) Accepted new connection");
 
@@ -25,7 +27,7 @@ async fn handle_connection(
         }
 
         let res = match resp::parse(&buf[..n]) {
-            Ok(req) => command::handle(req, &data).await,
+            Ok(req) => command::handle(req, &data, &info).await,
             Err(e) => resp::RespOut::Error(format!("failed to parse: {}", e)),
         };
 
@@ -56,6 +58,8 @@ async fn main() -> Result<()> {
 
     let data = Arc::new(RwLock::new(data::InMemoryData::new()));
 
+    let info = Arc::new(RwLock::new(info::create_info()));
+
     // Start background tasks
     {
         let data = Arc::clone(&data);
@@ -65,8 +69,9 @@ async fn main() -> Result<()> {
     loop {
         let (stream, _) = listener.accept().await?;
         let data = Arc::clone(&data);
+        let info = Arc::clone(&info);
         tokio::spawn(async move {
-            let _ = handle_connection(stream, data).await;
+            let _ = handle_connection(stream, data, info).await;
         });
     }
 }
