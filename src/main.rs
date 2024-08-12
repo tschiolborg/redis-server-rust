@@ -44,6 +44,10 @@ pub struct Args {
     /// Port to listen on
     #[arg(short, long, default_value_t = 6379)]
     port: u16,
+
+    /// Config for replication
+    #[arg(long)]
+    replicaof: Option<String>,
 }
 
 #[tokio::main]
@@ -52,13 +56,24 @@ async fn main() -> Result<()> {
 
     let addr = format!("127.0.0.1:{}", args.port);
 
-    println!("(INFO) Listening on {addr}");
+    println!("(INFO) Listening on {}", addr);
 
     let listener = TcpListener::bind(addr).await?;
 
     let data = Arc::new(RwLock::new(data::InMemoryData::new()));
 
-    let info = Arc::new(RwLock::new(info::create_info()));
+    let role = match args.replicaof {
+        Some(addr) => {
+            println!("(INFO) Replicating from {}", addr);
+            info::ReplicaRole::SLAVE
+        }
+        None => {
+            println!("(INFO) Starting as master");
+            info::ReplicaRole::MASTER
+        }
+    };
+
+    let info = Arc::new(RwLock::new(info::create_info(role)));
 
     // Start background tasks
     {
