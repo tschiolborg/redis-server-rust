@@ -6,7 +6,6 @@ use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 
 pub mod background;
-// pub mod cli;
 pub mod command;
 pub mod data;
 pub mod resp;
