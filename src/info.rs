@@ -1,3 +1,4 @@
+use rand::{distributions::Alphanumeric, Rng};
 use std::sync::Arc;
 
 // TODO: make struct
@@ -19,6 +20,8 @@ impl ReplicaRole {
 
 struct Replication {
     role: ReplicaRole,
+    master_replid: Option<String>,
+    master_repl_offset: Option<u64>,
 }
 
 pub struct Info {
@@ -36,6 +39,12 @@ impl Info {
             "replication" => {
                 res.push(format!("# {}\n", name));
                 res.push(format!("role:{}\n", self.replication.role.to_string()));
+                if let Some(master_replid) = &self.replication.master_replid {
+                    res.push(format!("master_replid:{}\n", master_replid));
+                }
+                if let Some(master_repl_offset) = &self.replication.master_repl_offset {
+                    res.push(format!("master_repl_offset:{}\n", master_repl_offset));
+                }
                 Some(res.join(""))
             }
             _ => None,
@@ -58,5 +67,24 @@ impl Info {
 }
 
 pub fn create_info(role: ReplicaRole) -> Info {
-    Info::new(Replication { role })
+    let master_replid = match role {
+        ReplicaRole::MASTER => Some(
+            rand::thread_rng()
+                .sample_iter(&Alphanumeric)
+                .take(40)
+                .map(char::from)
+                .collect(),
+        ),
+        ReplicaRole::SLAVE => None,
+    };
+    let master_repl_offset = match role {
+        ReplicaRole::MASTER => Some(0),
+        ReplicaRole::SLAVE => None,
+    };
+
+    Info::new(Replication {
+        role,
+        master_replid,
+        master_repl_offset,
+    })
 }
