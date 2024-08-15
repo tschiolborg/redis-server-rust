@@ -1,8 +1,4 @@
-use std::collections::HashMap;
 use std::sync::Arc;
-
-type Section = HashMap<String, String>;
-type Info = HashMap<String, Section>;
 
 // TODO: make struct
 pub type SharedInfo = Arc<Info>;
@@ -21,20 +17,46 @@ impl ReplicaRole {
     }
 }
 
-pub fn create_info(role: ReplicaRole) -> Info {
-    let mut info = Info::new();
-
-    let mut replication = Section::new();
-    replication.insert("role".to_string(), role.to_string());
-
-    info.insert("replication".to_string(), replication);
-
-    info
+struct Replication {
+    role: ReplicaRole,
 }
 
-pub fn print_section(mut res: Vec<String>, section: &Section) {
-    for (k, v) in section.iter() {
-        res.push(format!("{}:{}", k, v));
+pub struct Info {
+    replication: Replication,
+}
+
+impl Info {
+    fn new(replication: Replication) -> Info {
+        Info { replication }
     }
-    res.push("\n".to_string());
+
+    pub fn get_section(&self, name: &str) -> Option<String> {
+        let mut res = Vec::new();
+        match name {
+            "replication" => {
+                res.push(format!("# {}\n", name));
+                res.push(format!("role:{}\n", self.replication.role.to_string()));
+                Some(res.join(""))
+            }
+            _ => None,
+        }
+    }
+
+    pub fn get_all(&self) -> String {
+        let mut res = Vec::new();
+
+        let sections = vec!["replication"];
+
+        for section in sections {
+            if let Some(s) = self.get_section(section) {
+                res.push(s);
+            }
+        }
+
+        res.join("\n")
+    }
+}
+
+pub fn create_info(role: ReplicaRole) -> Info {
+    Info::new(Replication { role })
 }

@@ -117,28 +117,20 @@ impl<'a, 'b, 'c> Handler<'a, 'b, 'c> {
     }
 
     async fn info(&self) -> Result<RespOut> {
-        let info = self.info;
-
-        let mut res = Vec::new();
-
-        let mut sections = std::collections::HashSet::new();
-
-        while self.args.has_next() {
-            let arg = self.args.next()?;
-            sections.insert(arg.as_str());
-        }
-
-        for (k, v) in info.iter() {
-            if !sections.is_empty() && !sections.contains(&k.as_str()) {
-                continue;
+        let res = match self.args.has_next() {
+            false => self.info.get_all(),
+            true => {
+                let mut res = Vec::new();
+                while self.args.has_next() {
+                    let arg = self.args.next()?;
+                    if let Some(s) = self.info.get_section(arg.as_str()) {
+                        res.push(s);
+                    }
+                }
+                res.join("\n")
             }
-            res.push(format!("# {}\n", k));
-            for (k, v) in v.iter() {
-                res.push(format!("{}:{}\n", k, v));
-            }
-            res.push("\n".to_string());
-        }
+        };
 
-        return Ok(RespOut::BulkString(res.join("")));
+        return Ok(RespOut::BulkString(res));
     }
 }

@@ -73,7 +73,7 @@ async fn main() -> Result<()> {
         }
     };
 
-    // read-only
+    // read-only to no mutex is needed
     let info = Arc::new(info::create_info(role));
 
     // Start background tasks
