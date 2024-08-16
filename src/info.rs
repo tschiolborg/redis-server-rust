@@ -1,9 +1,9 @@
 use rand::{distributions::Alphanumeric, Rng};
 use std::sync::Arc;
 
-// TODO: make struct
 pub type SharedInfo = Arc<Info>;
 
+#[derive(PartialEq, Clone, Copy)]
 pub enum ReplicaRole {
     MASTER,
     SLAVE,
@@ -18,14 +18,25 @@ impl ReplicaRole {
     }
 }
 
-struct Replication {
+pub struct Replication {
     role: ReplicaRole,
     master_replid: Option<String>,
     master_repl_offset: Option<u64>,
+    master_host: Option<String>,
+    master_port: Option<u16>,
+}
+
+impl Replication {
+    pub fn master_addr(&self) -> Option<String> {
+        match (&self.master_host, self.master_port) {
+            (Some(host), Some(port)) => Some(format!("{}:{}", host, port)),
+            _ => None,
+        }
+    }
 }
 
 pub struct Info {
-    replication: Replication,
+    pub replication: Replication,
 }
 
 impl Info {
@@ -44,6 +55,12 @@ impl Info {
                 }
                 if let Some(master_repl_offset) = &self.replication.master_repl_offset {
                     res.push(format!("master_repl_offset:{}\n", master_repl_offset));
+                }
+                if let Some(master_host) = &self.replication.master_host {
+                    res.push(format!("master_host:{}\n", master_host));
+                }
+                if let Some(master_port) = &self.replication.master_port {
+                    res.push(format!("master_port:{}\n", master_port));
                 }
                 Some(res.join(""))
             }
@@ -66,7 +83,11 @@ impl Info {
     }
 }
 
-pub fn create_info(role: ReplicaRole) -> Info {
+pub fn create_info(
+    role: ReplicaRole,
+    master_host: Option<String>,
+    master_port: Option<u16>,
+) -> Info {
     let master_replid = match role {
         ReplicaRole::MASTER => Some(
             rand::thread_rng()
@@ -86,5 +107,7 @@ pub fn create_info(role: ReplicaRole) -> Info {
         role,
         master_replid,
         master_repl_offset,
+        master_host,
+        master_port,
     })
 }

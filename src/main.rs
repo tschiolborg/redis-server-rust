@@ -9,6 +9,7 @@ pub mod background;
 pub mod command;
 pub mod data;
 pub mod info;
+pub mod replication;
 pub mod resp;
 
 async fn handle_connection(
@@ -62,24 +63,35 @@ async fn main() -> Result<()> {
 
     let data = Arc::new(RwLock::new(data::InMemoryData::new()));
 
-    let role = match args.replicaof {
-        Some(addr) => {
-            println!("(INFO) Replicating from {}", addr);
-            info::ReplicaRole::SLAVE
-        }
-        None => {
-            println!("(INFO) Starting as master");
-            info::ReplicaRole::MASTER
-        }
-    };
+    let role;
+    let master_host;
+    let master_port;
+
+    if let Some(addr) = &args.replicaof {
+        println!("(INFO) Replicating from {}", addr);
+        role = info::ReplicaRole::SLAVE;
+        master_host = Some(addr.split(" ").next().unwrap().to_string());
+        master_port = Some(addr.split(" ").nth(1).unwrap().parse().unwrap());
+    } else {
+        role = info::ReplicaRole::MASTER;
+        master_host = None;
+        master_port = None;
+    }
 
     // read-only to no mutex is needed
-    let info = Arc::new(info::create_info(role));
+    let info = Arc::new(info::create_info(role, master_host, master_port));
 
     // Start background tasks
     {
         let data = Arc::clone(&data);
         tokio::spawn(background::delete_expired(data));
+    }
+
+    // Replica task
+    if role == info::ReplicaRole::SLAVE {
+        let data = Arc::clone(&data);
+        let info = Arc::clone(&info);
+        tokio::spawn(replication::replication_task(data, info));
     }
 
     loop {
