@@ -27,6 +27,10 @@ pub async fn replication_task(_data: SharedData, info: SharedInfo) -> Result<()>
     stream.write_all(&replconf.serialize()).await?;
     expect_simple(&mut stream, "OK").await?;
 
+    let psync = RespIn::Array(vec!["PSYNC".to_string(), "?".to_string(), "-1".to_string()]);
+    stream.write_all(&psync.serialize()).await?;
+    expect_simple(&mut stream, "FULLRESYNC").await?; // TODO: get id and offset
+
     Ok(())
 }
 

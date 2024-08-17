@@ -73,6 +73,7 @@ impl<'a, 'b, 'c> Handler<'a, 'b, 'c> {
             "SET" => self.set().await,
             "INFO" => self.info().await,
             "REPLCONF" => self.replconf(),
+            "PSYNC" => self.psync(),
             _ => bail!("unknown command: {}", cmd),
         }
     }
@@ -137,5 +138,10 @@ impl<'a, 'b, 'c> Handler<'a, 'b, 'c> {
 
     fn replconf(&self) -> Result<RespOut> {
         Ok(RespOut::SimpleString("OK".to_string()))
+    }
+
+    fn psync(&self) -> Result<RespOut> {
+        // TODO: return id and offset
+        Ok(RespOut::SimpleString("FULLRESYNC".to_string()))
     }
 }
