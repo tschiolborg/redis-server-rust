@@ -77,7 +77,7 @@ impl<'a, 'b, 'c> Handler<'a, 'b, 'c> {
     }
 
     fn ping(&self) -> Result<RespOut> {
-        Ok(RespOut::SimpleString("PONG".to_string()))
+        Ok(RespOut::SimpleString("PONGS".to_string()))
     }
 
     fn echo(&self) -> Result<RespOut> {

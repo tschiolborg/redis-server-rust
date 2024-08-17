@@ -21,6 +21,9 @@ async fn expect_pong(stream: &mut TcpStream) -> Result<()> {
     let res = crate::resp::parse_output(&buf[..n])?;
     match res {
         RespOut::SimpleString(s) if s == "PONG" => Ok(()),
-        _ => anyhow::bail!("expected PONG"),
+        _ => {
+            eprintln!("(ERROR) expected PONG... exiting");
+            std::process::exit(0);
+        }
     }
 }
