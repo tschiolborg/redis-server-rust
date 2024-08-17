@@ -18,6 +18,16 @@ impl ReplicaRole {
     }
 }
 
+pub struct Server {
+    tcp_port: u16,
+}
+
+impl Server {
+    pub fn port(&self) -> u16 {
+        self.tcp_port
+    }
+}
+
 pub struct Replication {
     role: ReplicaRole,
     master_replid: Option<String>,
@@ -27,21 +37,25 @@ pub struct Replication {
 }
 
 impl Replication {
-    pub fn master_addr(&self) -> Option<String> {
+    pub fn master_addr(&self) -> String {
         match (&self.master_host, self.master_port) {
-            (Some(host), Some(port)) => Some(format!("{}:{}", host, port)),
-            _ => None,
+            (Some(host), Some(port)) => format!("{}:{}", host, port),
+            _ => panic!("master_host and master_port must be set"),
         }
     }
 }
 
 pub struct Info {
+    pub server: Server,
     pub replication: Replication,
 }
 
 impl Info {
-    fn new(replication: Replication) -> Info {
-        Info { replication }
+    fn new(server: Server, replication: Replication) -> Info {
+        Info {
+            server,
+            replication,
+        }
     }
 
     pub fn get_section(&self, name: &str) -> Option<String> {
@@ -84,6 +98,7 @@ impl Info {
 }
 
 pub fn create_info(
+    port: u16,
     role: ReplicaRole,
     master_host: Option<String>,
     master_port: Option<u16>,
@@ -103,11 +118,14 @@ pub fn create_info(
         ReplicaRole::SLAVE => None,
     };
 
-    Info::new(Replication {
-        role,
-        master_replid,
-        master_repl_offset,
-        master_host,
-        master_port,
-    })
+    Info::new(
+        Server { tcp_port: port },
+        Replication {
+            role,
+            master_replid,
+            master_repl_offset,
+            master_host,
+            master_port,
+        },
+    )
 }

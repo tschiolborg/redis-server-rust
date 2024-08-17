@@ -72,12 +72,13 @@ impl<'a, 'b, 'c> Handler<'a, 'b, 'c> {
             "GET" => self.get().await,
             "SET" => self.set().await,
             "INFO" => self.info().await,
+            "REPLCONF" => self.replconf(),
             _ => bail!("unknown command: {}", cmd),
         }
     }
 
     fn ping(&self) -> Result<RespOut> {
-        Ok(RespOut::SimpleString("PONGS".to_string()))
+        Ok(RespOut::SimpleString("PONG".to_string()))
     }
 
     fn echo(&self) -> Result<RespOut> {
@@ -132,5 +133,9 @@ impl<'a, 'b, 'c> Handler<'a, 'b, 'c> {
         };
 
         return Ok(RespOut::BulkString(res));
+    }
+
+    fn replconf(&self) -> Result<RespOut> {
+        Ok(RespOut::SimpleString("OK".to_string()))
     }
 }
