@@ -41,7 +41,7 @@ pub async fn handshake(_data: SharedData, info: SharedInfo) -> Result<()> {
 
     let psync = RespIn::Array(vec!["PSYNC".to_string(), "?".to_string(), "-1".to_string()]);
     stream.write_all(&psync.serialize()).await?;
-    handle_psync(&mut stream).await?;
+    expect_full_resync(&mut stream).await?;
 
     Ok(())
 }
@@ -60,7 +60,7 @@ async fn expect_simple(stream: &mut TcpStream, expected: &str) -> Result<()> {
     }
 }
 
-async fn handle_psync(stream: &mut TcpStream) -> Result<()> {
+async fn expect_full_resync(stream: &mut TcpStream) -> Result<()> {
     let res = next_response(stream).await?;
     let (id, offset) = match res {
         RespOut::SimpleString(s) => {
