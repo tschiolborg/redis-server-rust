@@ -141,7 +141,13 @@ impl<'a, 'b, 'c> Handler<'a, 'b, 'c> {
     }
 
     fn psync(&self) -> Result<RespOut> {
-        // TODO: return id and offset
-        Ok(RespOut::SimpleString("FULLRESYNC".to_string()))
+        Ok(RespOut::SimpleString(
+            format!(
+                "FULLRESYNC {} {}",
+                self.info.replication.master_replid(),
+                self.info.replication.master_repl_offset()
+            )
+            .to_string(),
+        ))
     }
 }

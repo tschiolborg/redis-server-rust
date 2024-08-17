@@ -43,6 +43,16 @@ impl Replication {
             _ => panic!("master_host and master_port must be set"),
         }
     }
+    pub fn master_replid(&self) -> &String {
+        self.master_replid
+            .as_ref()
+            .expect("master_replid must be set")
+    }
+    pub fn master_repl_offset(&self) -> &u64 {
+        self.master_repl_offset
+            .as_ref()
+            .expect("master_repl_offset must be set")
+    }
 }
 
 pub struct Info {
