@@ -82,8 +82,8 @@ async fn main() -> Result<()> {
     // read-only to no mutex is needed
     let info = Arc::new(info::create_info(role, master_host, master_port));
 
-    // Start background tasks
-    {
+    // Start background task
+    if role == info::ReplicaRole::MASTER {
         let data = Arc::clone(&data);
         tokio::spawn(background::delete_expired(data));
     }
