@@ -11,6 +11,7 @@ pub mod data;
 pub mod info;
 pub mod replication;
 pub mod resp;
+pub mod utils;
 
 async fn handle_connection(
     mut stream: tokio::net::TcpStream,
@@ -27,7 +28,7 @@ async fn handle_connection(
             break;
         }
 
-        let res = match resp::parse(&buf[..n]) {
+        let res = match resp::parse_input(&buf[..n]) {
             Ok(req) => command::handle(req, &data, &info).await,
             Err(e) => resp::RespOut::Error(format!("failed to parse: {}", e)),
         };

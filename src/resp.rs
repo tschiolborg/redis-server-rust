@@ -22,14 +22,16 @@ const BULK_STRING_BYTE_CODE: u8 = b'$';
 const ARRAY_BYTE_CODE: u8 = b'*';
 const NULL_BYTE_CODE: u8 = b'_';
 
-pub fn parse(buf: &[u8]) -> Result<RespIn> {
-    println!(
-        "  (DEBUG) req: {:?}",
-        buf.iter().map(|b| *b as char).collect::<String>()
-    );
-
+pub fn parse_input(buf: &[u8]) -> Result<RespIn> {
+    crate::utils::print_buf(buf, " in req");
     let parser = RespParser::new(buf);
-    parser.parse_full()
+    parser.parse_request()
+}
+
+pub fn parse_output(buf: &[u8]) -> Result<RespOut> {
+    crate::utils::print_buf(buf, "out req");
+    let parser = RespParser::new(buf);
+    parser.parse_response()
 }
 
 pub struct RespParser<'a> {
@@ -38,16 +40,20 @@ pub struct RespParser<'a> {
 }
 
 impl RespParser<'_> {
-    pub fn new(buf: &[u8]) -> RespParser {
+    fn new(buf: &[u8]) -> RespParser {
         RespParser {
             buf,
             pos: Cell::new(0),
         }
     }
 
-    pub fn parse_full(&self) -> Result<RespIn> {
-        let values = self.next_array()?;
+    fn parse_request(&self) -> Result<RespIn> {
+        let values = self.next_array_of_strings()?;
         Ok(RespIn::Array(values))
+    }
+
+    fn parse_response(&self) -> Result<RespOut> {
+        Ok(self.next_item()?)
     }
 
     fn next(&self) -> Result<u8> {
@@ -76,12 +82,24 @@ impl RespParser<'_> {
         }
     }
 
+    fn next_item(&self) -> Result<RespOut> {
+        let item = match self.next()? {
+            SIMPLE_STRING_BYTE_CODE => RespOut::SimpleString(self.next_line()?),
+            ERROR_BYTE_CODE => RespOut::Error(self.next_line()?),
+            INTEGER_BYTE_CODE => RespOut::Integer(self.next_int()?),
+            BULK_STRING_BYTE_CODE => RespOut::BulkString(self.next_string()?),
+            ARRAY_BYTE_CODE => RespOut::Array(self.next_array()?),
+            NULL_BYTE_CODE => RespOut::Null,
+            byte => bail!("unexpected data type {:?}", byte),
+        };
+        Ok(item)
+    }
+
     fn next_int(&self) -> Result<i64> {
         self.next_line()?.parse::<i64>().map_err(Into::into)
     }
 
     fn next_string(&self) -> Result<String> {
-        self.consume_type(BULK_STRING_BYTE_CODE)?;
         let n = self.next_int()?;
         if n < 0 {
             bail!("fuck null strings")
@@ -89,11 +107,21 @@ impl RespParser<'_> {
         self.next_line()
     }
 
-    fn next_array(&self) -> Result<Vec<String>> {
+    fn next_array(&self) -> Result<Vec<RespOut>> {
+        let n = self.next_int()?;
+        let mut res = Vec::new();
+        for _ in 0..n {
+            res.push(self.next_item()?);
+        }
+        Ok(res)
+    }
+
+    fn next_array_of_strings(&self) -> Result<Vec<String>> {
         self.consume_type(ARRAY_BYTE_CODE)?;
         let n = self.next_int()?;
         let mut res = Vec::new();
         for _ in 0..n {
+            self.consume_type(BULK_STRING_BYTE_CODE)?;
             res.push(self.next_string()?);
         }
         Ok(res)
@@ -112,13 +140,30 @@ impl RespOut {
         let mut buf = Vec::new();
         serialize(&mut buf, &self);
 
-        println!(
-            "  (DEBUG) res: {:?}",
-            buf.to_vec()
-                .into_iter()
-                .map(|b| b as char)
-                .collect::<String>()
-        );
+        crate::utils::print_buf(&buf, "out res");
+        buf
+    }
+}
+
+impl RespIn {
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        match self {
+            RespIn::Array(values) => {
+                buf.push(ARRAY_BYTE_CODE);
+                buf.extend(values.len().to_string().as_bytes());
+                push_crlf(&mut buf);
+                for value in values {
+                    buf.push(BULK_STRING_BYTE_CODE);
+                    buf.extend(value.len().to_string().as_bytes());
+                    push_crlf(&mut buf);
+                    buf.extend(value.as_bytes());
+                    push_crlf(&mut buf);
+                }
+            }
+        }
+
+        crate::utils::print_buf(&buf, " in res");
         buf
     }
 }
