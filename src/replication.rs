@@ -4,7 +4,7 @@ use anyhow::Result;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-pub async fn replication_task(data: SharedData, info: SharedInfo) -> Result<()> {
+pub async fn replication_task(_data: SharedData, info: SharedInfo) -> Result<()> {
     let mut stream = TcpStream::connect(info.replication.master_addr().unwrap()).await?;
 
     let ping = RespIn::Array(vec!["PING".to_string()]);
