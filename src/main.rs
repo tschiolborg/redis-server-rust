@@ -31,19 +31,11 @@ async fn handle_connection(
 
         let res = match resp::parse_input(&buf[..n]) {
             Ok(req) => command::handle(req, &data, &info).await,
-            Err(e) => resp::RespOut::Error(format!("failed to parse: {}", e)),
+            Err(e) => vec![resp::RespOut::Error(format!("failed to parse: {}", e))],
         };
 
-        stream.write_all(&res.serialize()).await?;
-
-        // TODO: do this somewhere else
-        match res {
-            resp::RespOut::SimpleString(s) if s.to_uppercase().starts_with("FULLRESYNC") => {
-                println!("LOLOL");
-                let res = crate::file::construct_rdb_file(&data);
-                stream.write_all(&res.serialize()).await?;
-            }
-            _ => {}
+        for res in res {
+            stream.write_all(&res.serialize()).await?;
         }
     }
 

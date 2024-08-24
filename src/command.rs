@@ -19,14 +19,14 @@ struct Handler<'a, 'b, 'c> {
     args: Args<'c>,
 }
 
-pub async fn handle(value: RespIn, data: &SharedData, info: &SharedInfo) -> RespOut {
+pub async fn handle(value: RespIn, data: &SharedData, info: &SharedInfo) -> Vec<RespOut> {
     match handle_value(value, data, info).await {
         Ok(res) => res,
-        Err(e) => RespOut::Error(format!("failed to handle: {}", e)),
+        Err(e) => vec![RespOut::Error(format!("failed to handle: {}", e))],
     }
 }
 
-async fn handle_value(value: RespIn, data: &SharedData, info: &SharedInfo) -> Result<RespOut> {
+async fn handle_value(value: RespIn, data: &SharedData, info: &SharedInfo) -> Result<Vec<RespOut>> {
     match value {
         RespIn::Array(arr) => {
             let handler = Handler::new(data, info, Args::new(&arr));
@@ -58,12 +58,14 @@ impl<'b> Args<'b> {
     }
 }
 
+type Resp = Result<Vec<RespOut>>;
+
 impl<'a, 'b, 'c> Handler<'a, 'b, 'c> {
     fn new(data: &'a SharedData, info: &'b SharedInfo, args: Args<'c>) -> Handler<'a, 'b, 'c> {
         Self { data, info, args }
     }
 
-    async fn handle(&self) -> Result<RespOut> {
+    async fn handle(&self) -> Resp {
         let cmd = self.args.next()?;
 
         match cmd.to_uppercase().as_str() {
@@ -78,26 +80,27 @@ impl<'a, 'b, 'c> Handler<'a, 'b, 'c> {
         }
     }
 
-    fn ping(&self) -> Result<RespOut> {
-        Ok(RespOut::SimpleString("PONG".to_string()))
+    fn ping(&self) -> Resp {
+        Ok(vec![RespOut::SimpleString("PONG".to_string())])
     }
 
-    fn echo(&self) -> Result<RespOut> {
-        Ok(RespOut::BulkString(self.args.next()?.clone()))
+    fn echo(&self) -> Resp {
+        Ok(vec![RespOut::BulkString(self.args.next()?.clone())])
     }
 
-    async fn get(&self) -> Result<RespOut> {
+    async fn get(&self) -> Resp {
         let data = self.data.read().await;
 
         let key = self.args.next()?.as_str();
 
-        match data.get(key) {
-            Some(value) => Ok(RespOut::BulkString(value)),
-            None => Ok(RespOut::Null),
-        }
+        let res = match data.get(key) {
+            Some(value) => RespOut::BulkString(value),
+            None => RespOut::Null,
+        };
+        Ok(vec![res])
     }
 
-    async fn set(&self) -> Result<RespOut> {
+    async fn set(&self) -> Resp {
         let key = self.args.next()?.clone();
         let value = self.args.next()?.clone();
 
@@ -115,10 +118,10 @@ impl<'a, 'b, 'c> Handler<'a, 'b, 'c> {
 
         data.set(key, value, px);
 
-        Ok(RespOut::SimpleString("OK".to_string()))
+        Ok(vec![RespOut::SimpleString("OK".to_string())])
     }
 
-    async fn info(&self) -> Result<RespOut> {
+    async fn info(&self) -> Resp {
         let res = match self.args.has_next() {
             false => self.info.get_all(),
             true => {
@@ -133,21 +136,24 @@ impl<'a, 'b, 'c> Handler<'a, 'b, 'c> {
             }
         };
 
-        return Ok(RespOut::BulkString(res));
+        return Ok(vec![RespOut::BulkString(res)]);
     }
 
-    fn replconf(&self) -> Result<RespOut> {
-        Ok(RespOut::SimpleString("OK".to_string()))
+    fn replconf(&self) -> Resp {
+        Ok(vec![RespOut::SimpleString("OK".to_string())])
     }
 
-    fn psync(&self) -> Result<RespOut> {
-        Ok(RespOut::SimpleString(
-            format!(
-                "FULLRESYNC {} {}",
-                self.info.replication.master_replid(),
-                self.info.replication.master_repl_offset()
-            )
-            .to_string(),
-        ))
+    fn psync(&self) -> Resp {
+        Ok(vec![
+            RespOut::SimpleString(
+                format!(
+                    "FULLRESYNC {} {}",
+                    self.info.replication.master_replid(),
+                    self.info.replication.master_repl_offset()
+                )
+                .to_string(),
+            ),
+            crate::file::construct_rdb_file(&self.data),
+        ])
     }
 }
