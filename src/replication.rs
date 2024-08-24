@@ -16,7 +16,7 @@ pub async fn replication_task(data: SharedData, info: SharedInfo) {
     }
 }
 
-pub async fn handshake(_data: SharedData, info: SharedInfo) -> Result<()> {
+pub async fn handshake(data: SharedData, info: SharedInfo) -> Result<()> {
     let mut stream = TcpStream::connect(info.replication.master_addr()).await?;
 
     let ping = RespIn::Array(vec!["PING".to_string()]);
@@ -41,7 +41,7 @@ pub async fn handshake(_data: SharedData, info: SharedInfo) -> Result<()> {
 
     let psync = RespIn::Array(vec!["PSYNC".to_string(), "?".to_string(), "-1".to_string()]);
     stream.write_all(&psync.serialize()).await?;
-    expect_full_resync(&mut stream).await?;
+    expect_full_resync(&mut stream, &data).await?;
 
     Ok(())
 }
@@ -60,13 +60,13 @@ async fn expect_simple(stream: &mut TcpStream, expected: &str) -> Result<()> {
     }
 }
 
-async fn expect_full_resync(stream: &mut TcpStream) -> Result<()> {
+async fn expect_full_resync(stream: &mut TcpStream, _data: &SharedData) -> Result<()> {
     let res = next_response(stream).await?;
     let (id, offset) = match res {
         RespOut::SimpleString(s) => {
             let mut iter = s.split_whitespace();
             match iter.next() {
-                Some("FULLRESYNC") => {}
+                Some(s) if s.to_uppercase() == "FULLRESYNC" => {}
                 _ => bail!("expected FULLRESYNC"),
             }
             let id = match iter.next() {
@@ -83,6 +83,13 @@ async fn expect_full_resync(stream: &mut TcpStream) -> Result<()> {
     };
 
     println!("(INFO) FULLRESYNC id={} offset={}", id, offset);
+
+    match next_response(stream).await? {
+        RespOut::BulkString(_) => {
+            // TODO: parse RDB file and load it into the data store
+        }
+        _ => bail!("expected Bulk String"),
+    }
 
     Ok(())
 }

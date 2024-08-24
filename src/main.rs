@@ -8,6 +8,7 @@ use tokio::sync::RwLock;
 pub mod background;
 pub mod command;
 pub mod data;
+pub mod file;
 pub mod info;
 pub mod replication;
 pub mod resp;
@@ -34,6 +35,16 @@ async fn handle_connection(
         };
 
         stream.write_all(&res.serialize()).await?;
+
+        // TODO: do this somewhere else
+        match res {
+            resp::RespOut::SimpleString(s) if s.to_uppercase().starts_with("FULLRESYNC") => {
+                println!("LOLOL");
+                let res = crate::file::construct_rdb_file(&data);
+                stream.write_all(&res.serialize()).await?;
+            }
+            _ => {}
+        }
     }
 
     Ok(())
